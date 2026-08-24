@@ -10,13 +10,13 @@ use bytes::Bytes;
 use chrono::Local;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
-use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tar::Builder;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 // TODO Testing
 // TODO Stream Docker build context instead of loading the complete tar archive into memory
@@ -91,12 +91,14 @@ impl ImageBuilder {
         build_folder: &Path,
         artifact: &BcArtifact,
     ) -> Result<(), ImageError> {
-        let manifest = Manifest::from_file(artifact.path().join("manifest.json"))?;
+        let manifest = Manifest::from_file(artifact.path().join("manifest.json")).await?;
         let navdvd = build_folder.join("NAVDVD");
         tokio::fs::create_dir(&navdvd).await?;
-        self.populate_navdvd(&navdvd, artifact, &manifest).await?;
-        self.create_dockerfile(build_folder, artifact, &manifest)
-            .await?;
+
+        tokio::try_join!(
+            self.populate_navdvd(&navdvd, artifact, &manifest),
+            self.create_dockerfile(build_folder, artifact, &manifest)
+        )?;
         Ok(())
     }
 
@@ -175,7 +177,7 @@ impl ImageBuilder {
         artifact: &BcArtifact,
         manifest: &Manifest,
     ) -> Result<(), ImageError> {
-        let dockerfile = File::create(build_folder.join("dockerfile"))?;
+        let dockerfile = tokio::fs::File::create(build_folder.join("dockerfile")).await?;
 
         let base_image = "mcr.microsoft.com/businesscentral:ltsc2025-dev";
         let datetime = Local::now().format("%Y%m%d%H%M").to_string();
@@ -202,24 +204,36 @@ impl ImageBuilder {
         datetime: String,
         is_bc_sandbox: &str,
     ) -> Result<(), ImageError> {
-        writeln!(dockerfile, "FROM {}", base_image)?;
-        writeln!(dockerfile, "ENV DatabaseServer=localhost DatabaseInstance=SQLEXPRESS DatabaseName=CRONUS IsBcSandbox={} artifactUrl={} filesOnly={}", is_bc_sandbox, artifact.url(), false)?;
-        writeln!(dockerfile, "")?;
-        writeln!(dockerfile, "COPY NAVDVD /NAVDVD/")?;
-        writeln!(dockerfile, "")?;
-        writeln!(dockerfile, "RUN \\Run\\start.ps1 -installOnly")?;
-        writeln!(dockerfile, "")?;
-        writeln!(
-            dockerfile,
-            "LABEL legal=\"http://go.microsoft.com/fwlink/?LinkId=837447\" \\"
-        )?;
-        writeln!(dockerfile, "      created=\"{}\" \\", datetime)?;
-        writeln!(dockerfile, "      nav=\"{}\" \\", manifest.nav)?;
-        // TODO make this section more linux friendly
-        writeln!(dockerfile, "      cu=\"{}\" \\", manifest.cu)?;
-        writeln!(dockerfile, "      country=\"{}\" \\", manifest.country)?;
-        writeln!(dockerfile, "      version=\"{}\" \\", manifest.version)?;
-        writeln!(dockerfile, "      platform=\"{}\"", manifest.platform)?;
+        dockerfile
+            .write_all(format!("FROM {}\n", base_image).as_bytes())
+            .await?;
+        dockerfile.write_all(format!("ENV DatabaseServer=localhost DatabaseInstance=SQLEXPRESS DatabaseName=CRONUS IsBcSandbox={} artifactUrl={} filesOnly={}\n", is_bc_sandbox, artifact.url(), false).as_bytes()).await?;
+        dockerfile.write_all(b"COPY NAVDVD /NAVDVD/\n").await?;
+        dockerfile
+            .write_all(b"RUN \\Run\\start.ps1 -installOnly\n")
+            .await?;
+        dockerfile
+            .write_all(b"LABEL legal=\"http://go.microsoft.com/fwlink/?LinkId=837447\" \\")
+            .await?;
+        dockerfile
+            .write_all(format!("      created=\"{}\" \\\n", datetime).as_bytes())
+            .await?;
+        dockerfile
+            .write_all(format!("      nav=\"{}\" \\\n", manifest.nav).as_bytes())
+            .await?;
+        dockerfile
+            .write_all(format!("      cu=\"{}\" \\\n", manifest.cu).as_bytes())
+            .await?;
+        dockerfile
+            .write_all(format!("      country=\"{}\" \\\n", manifest.country).as_bytes())
+            .await?;
+        dockerfile
+            .write_all(format!("      version=\"{}\" \\\n", manifest.version).as_bytes())
+            .await?;
+        dockerfile
+            .write_all(format!("      platform=\"{}\"", manifest.platform).as_bytes())
+            .await?;
+        dockerfile.flush().await?;
         Ok(())
     }
 
@@ -292,12 +306,16 @@ struct Manifest {
 }
 
 impl Manifest {
-    fn from_file<P>(path: P) -> Result<Manifest, ImageError>
+    async fn from_file<P>(path: P) -> Result<Manifest, ImageError>
     where
         P: AsRef<Path>,
     {
-        let data = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&data)?)
+        let mut f = File::open(path).await?;
+        let mut buffer = String::new();
+
+        f.read_to_string(&mut buffer).await?;
+
+        Ok(serde_json::from_str(&buffer)?)
     }
 }
 
