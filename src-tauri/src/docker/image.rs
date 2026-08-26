@@ -109,6 +109,16 @@ impl ImageBuilder {
         self.copy_demo_db_into_navdvd(navdvd_folder, artifact.path(), manifest)
             .await?;
 
+        while let Some(entry) = tokio::fs::read_dir(artifact.platform_path())
+            .await?
+            .next_entry()
+            .await?
+        {
+            let file_name = entry.file_name();
+            let destination = navdvd_folder.join(&file_name);
+            tokio::fs::copy(entry.path(), &destination).await?;
+        }
+
         for entry in artifact.path().read_dir()? {
             match entry {
                 Ok(entry) => {
@@ -276,7 +286,7 @@ impl ImageBuilder {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-struct Manifest {
+pub struct Manifest {
     version: String, // IDEA use version struct from artifact
     #[serde(rename = "platformUrl")]
     platform_url: String,
@@ -292,12 +302,16 @@ struct Manifest {
 }
 
 impl Manifest {
-    fn from_file<P>(path: P) -> Result<Manifest, ImageError>
+    pub fn from_file<P>(path: P) -> Result<Manifest, ImageError>
     where
         P: AsRef<Path>,
     {
         let data = fs::read_to_string(path)?;
         Ok(serde_json::from_str(&data)?)
+    }
+
+    pub fn platform_url(&self) -> &str {
+        &self.platform_url
     }
 }
 
