@@ -13,4 +13,7 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
         }
     }
     Ok(())
+    // TODO refactor with focus on concurrency/parallelism
+    // - Files should be copied with tkoio
+    // - What is faster, taking the extra steps to process all subdirectories with join or recursivly going thorugh them one by one?
 }

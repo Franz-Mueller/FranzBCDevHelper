@@ -38,12 +38,25 @@ impl ArtifactResolver {
         if tokio::fs::try_exists(&requested_path).await? {
             let url = self.artifact_url(&request, &request.version);
 
+            let platform_path = self.platform_artifact_path(&request, &request.version);
+
+            if !tokio::fs::try_exists(&platform_path).await? {
+                let manifest = crate::docker::image::Manifest::from_file(
+                    &requested_path.join("manifest.json"),
+                )
+                .unwrap();
+                let platform_url = self.base_url.clone().join(manifest.platform_url())?;
+                self.download_artifact(&platform_url, &platform_path)
+                    .await?;
+            }
+
             return Ok(BcArtifact {
                 deployment_type: request.deployment_type,
                 version: request.version,
                 country: request.country,
                 path: requested_path,
                 url,
+                platform_path,
             });
         }
 
@@ -55,12 +68,23 @@ impl ArtifactResolver {
             self.download_artifact(&url, &path).await?;
         }
 
+        let platform_path = self.platform_artifact_path(&request, &version);
+
+        if !tokio::fs::try_exists(&platform_path).await? {
+            let manifest =
+                crate::docker::image::Manifest::from_file(&path.join("manifest.json")).unwrap();
+            let platform_url = self.base_url.clone().join(manifest.platform_url())?;
+            self.download_artifact(&platform_url, &platform_path)
+                .await?;
+        }
+
         Ok(BcArtifact {
             deployment_type: request.deployment_type,
             version,
             country: request.country,
             path,
             url,
+            platform_path,
         })
     }
 
@@ -119,6 +143,13 @@ impl ArtifactResolver {
             .join(&request.deployment_type)
             .join(version.to_string())
             .join(&request.country)
+    }
+
+    fn platform_artifact_path(&self, request: &BcArtifactRequest, version: &BcVersion) -> PathBuf {
+        self.cache_path
+            .join(&request.deployment_type)
+            .join(version.to_string())
+            .join("platform".to_string())
     }
 
     fn artifact_url(&self, request: &BcArtifactRequest, version: &BcVersion) -> Url {
@@ -199,6 +230,7 @@ pub struct BcArtifact {
     country: String,
     path: PathBuf,
     url: Url,
+    platform_path: PathBuf,
 }
 
 impl BcArtifact {
@@ -216,6 +248,9 @@ impl BcArtifact {
     }
     pub fn url(&self) -> &Url {
         &self.url
+    }
+    pub fn platform_path(&self) -> &Path {
+        &self.platform_path
     }
 }
 
