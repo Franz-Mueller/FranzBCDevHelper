@@ -116,7 +116,11 @@ impl ImageBuilder {
         {
             let file_name = entry.file_name();
             let destination = navdvd_folder.join(&file_name);
-            tokio::fs::copy(entry.path(), &destination).await?;
+            if entry.path().is_dir() {
+                copy_dir_all(entry.path(), &destination)?; // TODO async
+            } else {
+                tokio::fs::copy(entry.path(), &destination).await?;
+            }
         }
 
         for entry in artifact.path().read_dir()? {
