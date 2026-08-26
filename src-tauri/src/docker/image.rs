@@ -109,11 +109,9 @@ impl ImageBuilder {
         self.copy_demo_db_into_navdvd(navdvd_folder, artifact.path(), manifest)
             .await?;
 
-        while let Some(entry) = tokio::fs::read_dir(artifact.platform_path())
-            .await?
-            .next_entry()
-            .await?
-        {
+        let mut entries = tokio::fs::read_dir(artifact.platform_path()).await?;
+
+        while let Some(entry) = entries.next_entry().await? {
             let file_name = entry.file_name();
             let destination = navdvd_folder.join(&file_name);
             if entry.path().is_dir() {
