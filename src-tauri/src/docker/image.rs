@@ -318,12 +318,16 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    pub fn from_file<P>(path: P) -> Result<Manifest, ImageError>
+    pub async fn from_file<P>(path: P) -> Result<Manifest, ImageError>
     where
         P: AsRef<Path>,
     {
-        let data = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&data)?)
+        let mut f = File::open(path).await?;
+        let mut buffer = String::new();
+
+        f.read_to_string(&mut buffer).await?;
+
+        Ok(serde_json::from_str(&buffer)?)
     }
 
     pub fn platform_url(&self) -> &str {

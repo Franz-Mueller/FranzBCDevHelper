@@ -44,6 +44,7 @@ impl ArtifactResolver {
                 let manifest = crate::docker::image::Manifest::from_file(
                     &requested_path.join("manifest.json"),
                 )
+                .await
                 .unwrap();
                 let platform_url = self.base_url.clone().join(manifest.platform_url())?;
                 self.download_artifact(&platform_url, &platform_path)
@@ -71,8 +72,9 @@ impl ArtifactResolver {
         let platform_path = self.platform_artifact_path(&request, &version);
 
         if !tokio::fs::try_exists(&platform_path).await? {
-            let manifest =
-                crate::docker::image::Manifest::from_file(&path.join("manifest.json")).unwrap();
+            let manifest = crate::docker::image::Manifest::from_file(&path.join("manifest.json"))
+                .await
+                .unwrap();
             let platform_url = self.base_url.clone().join(manifest.platform_url())?;
             self.download_artifact(&platform_url, &platform_path)
                 .await?;
