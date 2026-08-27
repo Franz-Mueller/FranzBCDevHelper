@@ -1,4 +1,5 @@
 use crate::bc::version::{BcVersion, BcVersionError};
+use crate::docker::manifest::Manifest;
 use reqwest::{self, StatusCode};
 use serde::Deserialize;
 use std::fs;
@@ -37,15 +38,15 @@ impl ArtifactResolver {
 
         if tokio::fs::try_exists(&requested_path).await? {
             let url = self.artifact_url(&request, &request.version);
-
+            let manifest = Manifest::from_file(&requested_path.join("manifest.json"))
+                .await
+                .unwrap();
             let platform_path = self.platform_artifact_path(&request, &request.version);
 
             if !tokio::fs::try_exists(&platform_path).await? {
-                let manifest = crate::docker::image::Manifest::from_file(
-                    &requested_path.join("manifest.json"),
-                )
-                .await
-                .unwrap();
+                let manifest = Manifest::from_file(&requested_path.join("manifest.json"))
+                    .await
+                    .unwrap();
                 let platform_url = self.base_url.clone().join(manifest.platform_url())?;
                 self.download_artifact(&platform_url, &platform_path)
                     .await?;
@@ -58,6 +59,7 @@ impl ArtifactResolver {
                 path: requested_path,
                 url,
                 platform_path,
+                manifest,
             });
         }
 
@@ -70,11 +72,10 @@ impl ArtifactResolver {
         }
 
         let platform_path = self.platform_artifact_path(&request, &version);
-
+        let manifest = Manifest::from_file(&path.join("manifest.json"))
+            .await
+            .unwrap();
         if !tokio::fs::try_exists(&platform_path).await? {
-            let manifest = crate::docker::image::Manifest::from_file(&path.join("manifest.json"))
-                .await
-                .unwrap();
             let platform_url = self.base_url.clone().join(manifest.platform_url())?;
             self.download_artifact(&platform_url, &platform_path)
                 .await?;
@@ -87,6 +88,7 @@ impl ArtifactResolver {
             path,
             url,
             platform_path,
+            manifest,
         })
     }
 
@@ -233,6 +235,7 @@ pub struct BcArtifact {
     path: PathBuf,
     url: Url,
     platform_path: PathBuf,
+    manifest: Manifest,
 }
 
 impl BcArtifact {
@@ -253,6 +256,9 @@ impl BcArtifact {
     }
     pub fn platform_path(&self) -> &Path {
         &self.platform_path
+    }
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
     }
 }
 

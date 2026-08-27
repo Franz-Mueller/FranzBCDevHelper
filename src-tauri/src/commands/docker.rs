@@ -1,5 +1,5 @@
-use crate::bc::artifact::{BcArtifact, BcArtifactRequest};
 use crate::bc::version::BcVersion;
+use crate::docker::artifact::{BcArtifact, BcArtifactRequest};
 use crate::docker::image::BcImage;
 use crate::AppState;
 use tauri::State;
@@ -14,14 +14,7 @@ pub async fn create_docker_container(
     country: String,
     container_name: String,
 ) -> Result<(), String> {
-    create_docker_container_inner(
-        &state,
-        deployment_type,
-        version,
-        country,
-        container_name,
-    )
-    .await
+    create_docker_container_inner(&state, deployment_type, version, country, container_name).await
 }
 
 async fn create_docker_container_inner(

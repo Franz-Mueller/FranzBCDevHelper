@@ -1,6 +1,6 @@
-use self::bc::artifact::ArtifactResolver;
+use self::docker::artifact::ArtifactResolver;
+use self::docker::build_image::ImageBuilder;
 use self::docker::container::ContainerBuilder;
-use self::docker::image::ImageBuilder;
 
 use self::commands::docker::create_docker_container;
 
