@@ -1,27 +1,7 @@
-use crate::docker::image::BcImage;
+use crate::bc_container::{BcContainer, BcImage};
 use bollard::config::ContainerCreateBody;
 use bollard::plugin::ContainerCreateResponse;
 use bollard::query_parameters::{CreateContainerOptionsBuilder, ListImagesOptionsBuilder};
-
-pub struct BcContainer {
-    // TODO Container should inherit Connection to docker but should be aware of changes made to it
-    // would save some value passing
-    id: String,
-    name: String,
-}
-
-impl BcContainer {
-    // pub async fn from_inspect() -> Result<Self, ContainerError> {}
-
-    pub async fn start(&self, docker: &bollard::Docker) -> Result<(), ContainerError> {
-        docker.start_container(&self.name, None).await?;
-        Ok(())
-    }
-    pub async fn stop(&self, docker: &bollard::Docker) -> Result<(), ContainerError> {
-        docker.stop_container(&self.name, None).await?;
-        Ok(())
-    }
-}
 
 pub struct ContainerBuilder {
     docker: bollard::Docker,
@@ -48,10 +28,7 @@ impl ContainerBuilder {
 
         let create_response = self.create_container(image, container_name).await?;
 
-        let container = BcContainer {
-            id: create_response.id,
-            name: container_name.to_string(),
-        };
+        let container = BcContainer::new(create_response.id, container_name.to_string());
 
         container.start(&self.docker).await?;
 

@@ -1,17 +1,18 @@
 use crate::bc::version::{BcVersion, BcVersionError};
+use crate::bc_container::{BcArtifact, Manifest};
+use crate::utils::file_handling::extract;
 use reqwest::{self, StatusCode};
 use serde::Deserialize;
-use std::fs;
 use std::path::{Path, PathBuf};
+use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use url::Url;
-use zip::ZipArchive;
 
 // TODO Testing
-// TODO implement function that checks if country and deployment type are valid to prevent creating of wrong paths
+// TODO implement function that checks if country and deployment type are valid to prevent creation of wrong paths
 // TODO Concurrent resolve() calls can corrupt each other
 
-pub struct BcArtifactRequest {
+pub struct ArtifactRequest {
     pub deployment_type: String,
     pub version: BcVersion,
     pub country: String,
@@ -24,40 +25,50 @@ pub struct ArtifactResolver {
 }
 
 impl ArtifactResolver {
+    /// # Example
+    ///
+    /// ```rust
+    /// let request = ArtifactRequest {deployment_type: deployment_type, version: version, country: country};
+    /// let artifact = state.artifact_resolver.resolve(request).await?;
+    /// ```
+    ///
+    /// `state` = `AppState`
     pub fn new(cache_path: PathBuf) -> Self {
         Self {
             client: reqwest::Client::new(), // TODO think about timeouts
-            base_url: Url::parse("https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net").unwrap(),
+            base_url: Url::parse("https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net").unwrap(), // TODO additional URLs
             cache_path,
         }
     }
 
-    pub async fn resolve(&self, request: BcArtifactRequest) -> Result<BcArtifact, ArtifactError> {
+    pub async fn resolve(&self, request: ArtifactRequest) -> Result<BcArtifact, ArtifactError> {
         let requested_path = self.artifact_path(&request, &request.version);
 
         if tokio::fs::try_exists(&requested_path).await? {
             let url = self.artifact_url(&request, &request.version);
-
+            let manifest = Manifest::from_file(&requested_path.join("manifest.json"))
+                .await
+                .unwrap();
             let platform_path = self.platform_artifact_path(&request, &request.version);
 
             if !tokio::fs::try_exists(&platform_path).await? {
-                let manifest = crate::docker::image::Manifest::from_file(
-                    &requested_path.join("manifest.json"),
-                )
-                .unwrap();
+                let manifest = Manifest::from_file(&requested_path.join("manifest.json"))
+                    .await
+                    .unwrap();
                 let platform_url = self.base_url.clone().join(manifest.platform_url())?;
                 self.download_artifact(&platform_url, &platform_path)
                     .await?;
             }
 
-            return Ok(BcArtifact {
-                deployment_type: request.deployment_type,
-                version: request.version,
-                country: request.country,
-                path: requested_path,
+            return Ok(BcArtifact::new(
+                request.deployment_type,
+                request.version,
+                request.country,
+                requested_path,
                 url,
                 platform_path,
-            });
+                manifest,
+            ));
         }
 
         let version = self.resolve_version(&request).await?;
@@ -69,29 +80,27 @@ impl ArtifactResolver {
         }
 
         let platform_path = self.platform_artifact_path(&request, &version);
-
+        let manifest = Manifest::from_file(&path.join("manifest.json"))
+            .await
+            .unwrap();
         if !tokio::fs::try_exists(&platform_path).await? {
-            let manifest =
-                crate::docker::image::Manifest::from_file(&path.join("manifest.json")).unwrap();
             let platform_url = self.base_url.clone().join(manifest.platform_url())?;
             self.download_artifact(&platform_url, &platform_path)
                 .await?;
         }
 
-        Ok(BcArtifact {
-            deployment_type: request.deployment_type,
+        Ok(BcArtifact::new(
+            request.deployment_type,
             version,
-            country: request.country,
-            path,
+            request.country,
+            requested_path,
             url,
             platform_path,
-        })
+            manifest,
+        ))
     }
 
-    async fn resolve_version(
-        &self,
-        request: &BcArtifactRequest,
-    ) -> Result<BcVersion, ArtifactError> {
+    async fn resolve_version(&self, request: &ArtifactRequest) -> Result<BcVersion, ArtifactError> {
         let url = self.artifact_url(request, &request.version);
 
         if self.artifact_exists(&url).await? {
@@ -116,7 +125,7 @@ impl ArtifactResolver {
 
     async fn get_next_bc_version(
         &self,
-        artifact_request: &BcArtifactRequest,
+        artifact_request: &ArtifactRequest,
     ) -> Result<BcVersion, ArtifactError> {
         let url = self.version_index_url(artifact_request);
 
@@ -138,21 +147,21 @@ impl ArtifactResolver {
         find_next_higher_version(artifact_request.version, versions)
     }
 
-    fn artifact_path(&self, request: &BcArtifactRequest, version: &BcVersion) -> PathBuf {
+    fn artifact_path(&self, request: &ArtifactRequest, version: &BcVersion) -> PathBuf {
         self.cache_path
             .join(&request.deployment_type)
             .join(version.to_string())
             .join(&request.country)
     }
 
-    fn platform_artifact_path(&self, request: &BcArtifactRequest, version: &BcVersion) -> PathBuf {
+    fn platform_artifact_path(&self, request: &ArtifactRequest, version: &BcVersion) -> PathBuf {
         self.cache_path
             .join(&request.deployment_type)
             .join(version.to_string())
             .join("platform".to_string())
     }
 
-    fn artifact_url(&self, request: &BcArtifactRequest, version: &BcVersion) -> Url {
+    fn artifact_url(&self, request: &ArtifactRequest, version: &BcVersion) -> Url {
         let mut url = self.base_url.clone();
 
         url.path_segments_mut()
@@ -166,7 +175,7 @@ impl ArtifactResolver {
         url
     }
 
-    fn version_index_url(&self, request: &BcArtifactRequest) -> Url {
+    fn version_index_url(&self, request: &ArtifactRequest) -> Url {
         let mut url = self.base_url.clone();
 
         let index_file = format!("{}.json", request.country);
@@ -182,20 +191,20 @@ impl ArtifactResolver {
         let mut artifact_zip = path.to_path_buf();
         artifact_zip.add_extension("zip");
 
-        if tokio::fs::try_exists(&artifact_zip).await? {
-            match extract_artifact(artifact_zip.clone(), path.to_path_buf()).await {
+        if fs::try_exists(&artifact_zip).await? {
+            match extract(&artifact_zip, path).await {
                 Ok(()) => return Ok(()),
-                Err(ArtifactError::Zip(_)) => {
-                    tokio::fs::remove_file(&artifact_zip).await?;
+                Err(err) => {
+                    fs::remove_file(&artifact_zip).await?;
+                    return Err(ArtifactError::FileHandling(err));
                 }
-                Err(err) => return Err(err),
             } // TODO an error like disk full should not delete the zip
         }
 
         let temp_zip = artifact_zip.with_extension("zip.part");
 
         if let Some(parent) = temp_zip.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            fs::create_dir_all(parent).await?;
         }
 
         let response = self.client.get(url.clone()).send().await?;
@@ -205,8 +214,7 @@ impl ArtifactResolver {
         }
 
         let mut response = response.error_for_status()?;
-
-        let mut file = tokio::fs::File::create(&temp_zip).await?;
+        let mut file = fs::File::create(&temp_zip).await?;
 
         while let Some(chunk) = response.chunk().await? {
             file.write_all(&chunk).await?;
@@ -216,67 +224,10 @@ impl ArtifactResolver {
         file.sync_all().await?;
         drop(file);
 
-        tokio::fs::rename(&temp_zip, &artifact_zip).await?;
-
-        extract_artifact(artifact_zip, path.to_path_buf()).await?;
-
+        fs::rename(&temp_zip, &artifact_zip).await?;
+        extract(&artifact_zip, path).await?;
         Ok(())
     }
-}
-
-pub struct BcArtifact {
-    deployment_type: String,
-    version: BcVersion,
-    country: String,
-    path: PathBuf,
-    url: Url,
-    platform_path: PathBuf,
-}
-
-impl BcArtifact {
-    pub fn deployment_type(&self) -> &str {
-        &self.deployment_type
-    }
-    pub fn version(&self) -> BcVersion {
-        self.version
-    }
-    pub fn country(&self) -> &str {
-        &self.country
-    }
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-    pub fn url(&self) -> &Url {
-        &self.url
-    }
-    pub fn platform_path(&self) -> &Path {
-        &self.platform_path
-    }
-}
-
-async fn extract_artifact(zip_path: PathBuf, destination: PathBuf) -> Result<(), ArtifactError> {
-    tokio::task::spawn_blocking(move || unzip(&zip_path, &destination)).await??;
-
-    Ok(())
-}
-
-pub fn unzip(zip_path: &Path, path: &Path) -> Result<(), ArtifactError> {
-    let temp_extract_path = path.with_extension("extracting");
-
-    if temp_extract_path.try_exists()? {
-        fs::remove_dir_all(&temp_extract_path)?;
-    }
-
-    let file = fs::File::open(zip_path)?;
-    let mut archive = ZipArchive::new(file)?;
-
-    archive.extract(&temp_extract_path)?;
-
-    fs::rename(&temp_extract_path, path)?;
-
-    fs::remove_file(zip_path)?;
-
-    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -327,4 +278,7 @@ pub enum ArtifactError {
 
     #[error("unexpected HTTP status {status} for {url}")]
     UnexpectedStatus { status: StatusCode, url: Url },
+
+    #[error("file handling error: {0}")]
+    FileHandling(#[from] crate::utils::file_handling::FileHandlingError),
 }
