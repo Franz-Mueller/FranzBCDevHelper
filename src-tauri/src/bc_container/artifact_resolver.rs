@@ -93,7 +93,7 @@ impl ArtifactResolver {
             request.deployment_type,
             version,
             request.country,
-            requested_path,
+            path,
             url,
             platform_path,
             manifest,
