@@ -1,6 +1,7 @@
 use crate::bc::version::{BcVersion, BcVersionError};
 use crate::bc_container::{BcArtifact, Manifest};
 use crate::utils::file_handling::extract;
+use git2::AttrValue::False;
 use reqwest::{self, StatusCode};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -52,11 +53,7 @@ impl ArtifactResolver {
             let platform_path = self.platform_artifact_path(&request, &request.version);
 
             if !tokio::fs::try_exists(&platform_path).await? {
-                let manifest = Manifest::from_file(&requested_path.join("manifest.json"))
-                    .await
-                    .unwrap();
-                let platform_url = self.base_url.clone().join(manifest.platform_url())?;
-                self.download_artifact(&platform_url, &platform_path)
+                self.dowload_platform_artifact(&manifest, &platform_path)
                     .await?;
             }
 
@@ -81,11 +78,9 @@ impl ArtifactResolver {
 
         let platform_path = self.platform_artifact_path(&request, &version);
         let manifest = Manifest::from_file(&path.join("manifest.json"))
-            .await
-            .unwrap();
+            .await?;
         if !tokio::fs::try_exists(&platform_path).await? {
-            let platform_url = self.base_url.clone().join(manifest.platform_url())?;
-            self.download_artifact(&platform_url, &platform_path)
+            self.dowload_platform_artifact(&manifest, &platform_path)
                 .await?;
         }
 
@@ -98,6 +93,16 @@ impl ArtifactResolver {
             platform_path,
             manifest,
         ))
+    }
+
+    async fn dowload_platform_artifact(
+        &self,
+        manifest: &Manifest,
+        platform_path: &PathBuf,
+    ) -> Result<(), ArtifactError> {
+        let platform_url = self.platform_url(&manifest);
+        self.download_artifact(&platform_url, platform_path).await?;
+        Ok(())
     }
 
     async fn resolve_version(&self, request: &ArtifactRequest) -> Result<BcVersion, ArtifactError> {
@@ -171,6 +176,26 @@ impl ArtifactResolver {
                 &version.to_string(),
                 request.country.as_str(),
             ]);
+
+        url
+    }
+
+    fn platform_url(&self, manifest: &Manifest) -> Url {
+        let mut url = self.base_url.clone();
+
+        if manifest.platform_url() == "" {
+            let deployment_type = match manifest.is_bc_sandbox() {
+                true => "sandbox",
+                false => "onprem",
+            };
+            url.path_segments_mut()
+                .expect("HTTPS URL can contain path segments")
+                .extend([deployment_type, manifest.version(), "platform"]);
+        } else {
+            url.path_segments_mut()
+                .expect("HTTPS URL can contain path segments")
+                .extend([manifest.platform_url()]);
+        }
 
         url
     }
@@ -281,4 +306,7 @@ pub enum ArtifactError {
 
     #[error("file handling error: {0}")]
     FileHandling(#[from] crate::utils::file_handling::FileHandlingError),
+
+    #[error("artifact error: {0}")]
+    Artifact(#[from] Box<dyn std::error::Error>),
 }
