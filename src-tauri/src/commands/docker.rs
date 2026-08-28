@@ -62,7 +62,7 @@ mod tests {
         create_docker_container_inner(
             &state,
             "sandbox".into(),
-            "15.0.0.0".into(),
+            "16.0.0.0".into(),
             "de".into(),
             "bc-e2e-test".into(),
         )

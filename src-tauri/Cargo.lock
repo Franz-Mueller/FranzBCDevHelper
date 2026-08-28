@@ -1443,6 +1443,7 @@ dependencies = [
  "bollard",
  "bytes",
  "chrono",
+ "encoding_rs",
  "futures-util",
  "git2",
  "reqwest",

@@ -78,8 +78,7 @@ impl ArtifactResolver {
 
         let platform_path = self.platform_artifact_path(&request, &version);
         let manifest = Manifest::from_file(&path.join("manifest.json"))
-            .await
-            .unwrap();
+            .await?;
         if !tokio::fs::try_exists(&platform_path).await? {
             self.dowload_platform_artifact(&manifest, &platform_path)
                 .await?;
@@ -186,12 +185,12 @@ impl ArtifactResolver {
 
         if manifest.platform_url() == "" {
             let deployment_type = match manifest.is_bc_sandbox() {
-                true => "sanbox",
+                true => "sandbox",
                 false => "onprem",
             };
             url.path_segments_mut()
                 .expect("HTTPS URL can contain path segments")
-                .extend([deployment_type, manifest.platform(), "platform"]);
+                .extend([deployment_type, manifest.version(), "platform"]);
         } else {
             url.path_segments_mut()
                 .expect("HTTPS URL can contain path segments")
@@ -307,4 +306,7 @@ pub enum ArtifactError {
 
     #[error("file handling error: {0}")]
     FileHandling(#[from] crate::utils::file_handling::FileHandlingError),
+
+    #[error("artifact error: {0}")]
+    Artifact(#[from] Box<dyn std::error::Error>),
 }

@@ -35,6 +35,7 @@ url = "2.5.8"
 anyhow = "1.0.104"
 thiserror = "2.0.20"
 git2 = "0.21.0"
+encoding_rs = "0.8.35"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
