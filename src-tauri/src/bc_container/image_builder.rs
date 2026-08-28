@@ -1,7 +1,5 @@
 use crate::bc::version::{BcVersion, BcVersionError};
-use crate::docker::artifact::BcArtifact;
-use crate::docker::image::BcImage;
-use crate::docker::manifest::Manifest;
+use crate::bc_container::{BcArtifact, BcImage, Manifest};
 use crate::utils::file_handling::{compress, copy_dir_all, FileHandlingError};
 use bollard::{body_full, query_parameters::BuildImageOptionsBuilder, Docker};
 use bytes::Bytes;

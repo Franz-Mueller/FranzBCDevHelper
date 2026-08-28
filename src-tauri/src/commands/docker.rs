@@ -1,6 +1,5 @@
 use crate::bc::version::BcVersion;
-use crate::docker::artifact::{BcArtifact, BcArtifactRequest};
-use crate::docker::image::BcImage;
+use crate::bc_container::ArtifactRequest;
 use crate::AppState;
 use tauri::State;
 
@@ -28,7 +27,7 @@ async fn create_docker_container_inner(
 
     let artifact = state
         .artifact_resolver
-        .resolve(BcArtifactRequest {
+        .resolve(ArtifactRequest {
             deployment_type,
             version,
             country,

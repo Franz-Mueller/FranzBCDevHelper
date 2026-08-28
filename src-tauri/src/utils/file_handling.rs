@@ -1,6 +1,8 @@
 use std::path::Path;
 use tar::Builder;
 use tokio::fs;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use zip::ZipArchive;
 
 /// # Example
 ///
@@ -43,6 +45,32 @@ pub async fn compress(dir: &Path) -> Result<Vec<u8>, FileHandlingError> {
     Ok(tar_data)
 }
 
+pub async fn extract(zip_path: &Path, path: &Path) -> Result<(), FileHandlingError> {
+    let temp_extract_path = path.with_extension("extracting");
+
+    if temp_extract_path.try_exists()? {
+        fs::remove_dir_all(&temp_extract_path).await?;
+    }
+
+    let zip_path_owned = zip_path.to_owned();
+    let temp_extract_path_owned = temp_extract_path.clone();
+
+    tokio::task::spawn_blocking(move || -> Result<(), FileHandlingError> {
+        let file = std::fs::File::open(&zip_path_owned)?;
+        let mut archive = ZipArchive::new(file)?;
+        archive.extract(&temp_extract_path_owned)?;
+
+        Ok(())
+    })
+    .await??;
+
+    fs::rename(&temp_extract_path, path).await?;
+
+    fs::remove_file(zip_path).await?;
+
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum FileHandlingError {
     // TODO Improve
@@ -50,4 +78,6 @@ pub enum FileHandlingError {
     IoError(#[from] std::io::Error),
     #[error("tokio task join: {0}")]
     TokioJoinError(#[from] tokio::task::JoinError),
+    #[error("zip error: {0}")]
+    Zip(#[from] zip::result::ZipError),
 }

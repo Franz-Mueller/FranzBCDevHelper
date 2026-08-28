@@ -1,6 +1,4 @@
-use self::docker::artifact::ArtifactResolver;
-use self::docker::build_image::ImageBuilder;
-use self::docker::container::ContainerBuilder;
+use self::bc_container::{ArtifactResolver, ContainerBuilder, ImageBuilder};
 
 use self::commands::docker::create_docker_container;
 
@@ -11,8 +9,8 @@ use std::path::PathBuf;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod bc;
+mod bc_container;
 mod commands;
-mod docker;
 mod git;
 mod utils;
 
