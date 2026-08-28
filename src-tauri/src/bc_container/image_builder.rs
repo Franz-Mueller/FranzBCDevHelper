@@ -107,7 +107,7 @@ impl ImageBuilder {
         navdvd_folder: &Path,
         artifact: &BcArtifact,
     ) -> Result<(), ImageError> {
-        let mut entries = fs::read_dir(artifact.platform_path()).await?;
+        let mut entries = fs::read_dir(artifact.path()).await?;
         Ok(while let Some(entry) = entries.next_entry().await? {
             let file_name = entry.file_name();
             let file_name_str = file_name.to_string_lossy();
@@ -198,7 +198,7 @@ impl ImageBuilder {
             .write_all(b"RUN \\Run\\start.ps1 -installOnly\n")
             .await?;
         dockerfile
-            .write_all(b"LABEL legal=\"http://go.microsoft.com/fwlink/?LinkId=837447\" \\")
+            .write_all(b"LABEL legal=\"http://go.microsoft.com/fwlink/?LinkId=837447\" \\\n")
             .await?;
         dockerfile
             .write_all(format!("      created=\"{}\" \\\n", datetime).as_bytes())
