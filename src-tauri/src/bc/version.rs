@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context, Ok, Result};
 use std::fmt;
 use std::str::FromStr;
 
@@ -32,7 +32,7 @@ impl FromStr for BcVersion {
                 bail!("Version format not valid. More than 4 segments.");
             }
 
-            Ok::<BcVersion, anyhow::Error>(Self {
+            Ok(Self {
                 major,
                 minor,
                 build,

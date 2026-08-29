@@ -1,6 +1,6 @@
 use crate::bc::version::BcVersion;
 use crate::bc_container::{BcArtifact, BcImage, Manifest};
-use crate::utils::file_handling::{compress, copy_dir_all, FileHandlingError};
+use crate::utils::file_handling::{compress, copy_dir_all};
 use anyhow::{bail, Context, Result};
 use bollard::{body_full, query_parameters::BuildImageOptionsBuilder, Docker};
 use bytes::Bytes;
@@ -241,7 +241,7 @@ impl ImageBuilder {
                 .await
                 .context("Failed to populate dockerfile")?;
 
-            Ok::<(), anyhow::Error>(())
+            anyhow::Ok(())
         }
         .await
         .with_context(|| format!("Dockerfile: {}", dockerfile_path.display()))

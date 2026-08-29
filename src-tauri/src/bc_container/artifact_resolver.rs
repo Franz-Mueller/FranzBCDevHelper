@@ -1,7 +1,7 @@
-use crate::bc::version::{BcVersion, BcVersionError};
+use crate::bc::version::BcVersion;
 use crate::bc_container::{BcArtifact, Manifest};
 use crate::utils::file_handling::extract;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use reqwest::{self, StatusCode};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -37,19 +37,27 @@ impl ArtifactResolver {
     pub fn new(cache_path: PathBuf) -> Self {
         Self {
             client: reqwest::Client::new(), // TODO think about timeouts
-            base_url: Url::parse("https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net").unwrap(), // TODO additional URLs
+            base_url: Url::parse("https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net").unwrap(), // TODO additional URLs, also no unwrap
             cache_path,
         }
     }
 
-    pub async fn resolve(&self, request: ArtifactRequest) -> Result<BcArtifact, ArtifactError> {
+    pub async fn resolve(&self, request: ArtifactRequest) -> Result<BcArtifact> {
         let requested_path = self.artifact_path(&request, &request.version);
 
-        if tokio::fs::try_exists(&requested_path).await? {
+        if tokio::fs::try_exists(&requested_path)
+            .await
+            .with_context(|| format!("Failed try_exists on {}", &requested_path.display()))?
+        {
             let url = self.artifact_url(&request, &request.version);
             let manifest = Manifest::from_file(&requested_path.join("manifest.json"))
                 .await
-                .unwrap();
+                .with_context(|| {
+                    format!(
+                        "Failed to deserialize manifest at {}/manifest.json",
+                        &requested_path.display()
+                    )
+                })?;
             let platform_path = self.platform_artifact_path(&request, &request.version);
 
             if !tokio::fs::try_exists(&platform_path).await? {
@@ -68,16 +76,32 @@ impl ArtifactResolver {
             ));
         }
 
-        let version = self.resolve_version(&request).await?;
+        let version = self
+            .resolve_version(&request)
+            .await
+            .context("Failed to resolve artifact version")?;
         let path = self.artifact_path(&request, &version);
         let url = self.artifact_url(&request, &version);
 
         if !tokio::fs::try_exists(&path).await? {
-            self.download_artifact(&url, &path).await?;
+            self.download_artifact(&url, &path).await.with_context(|| {
+                format!(
+                    "Failed to download artifact from {} to {}",
+                    url.clone(),
+                    &path.display()
+                )
+            })?;
         }
 
         let platform_path = self.platform_artifact_path(&request, &version);
-        let manifest = Manifest::from_file(&path.join("manifest.json")).await?;
+        let manifest = Manifest::from_file(&path.join("manifest.json"))
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to deserialize manifest at {}/manifest.json",
+                    &path.display()
+                )
+            })?;
         if !tokio::fs::try_exists(&platform_path).await? {
             self.dowload_platform_artifact(&manifest, &platform_path)
                 .await?;
@@ -98,55 +122,77 @@ impl ArtifactResolver {
         &self,
         manifest: &Manifest,
         platform_path: &PathBuf,
-    ) -> Result<(), ArtifactError> {
+    ) -> Result<()> {
         let platform_url = self.platform_url(&manifest);
-        self.download_artifact(&platform_url, platform_path).await?;
+        self.download_artifact(&platform_url, platform_path)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to download platform artifact {} to {}",
+                    platform_url.clone(),
+                    platform_path.display()
+                )
+            })?;
         Ok(())
     }
 
-    async fn resolve_version(&self, request: &ArtifactRequest) -> Result<BcVersion, ArtifactError> {
+    async fn resolve_version(&self, request: &ArtifactRequest) -> Result<BcVersion> {
         let url = self.artifact_url(request, &request.version);
 
         if self.artifact_exists(&url).await? {
             return Ok(request.version);
         }
 
-        self.get_next_bc_version(request).await
+        self.get_next_bc_version(request).await // TODO ask yourself: would it make sense to test if the new artifact exists too? Just in case ms forgets to remove it from the index
     }
 
-    async fn artifact_exists(&self, url: &Url) -> Result<bool, ArtifactError> {
-        let response = self.client.head(url.clone()).send().await?;
+    async fn artifact_exists(&self, url: &Url) -> Result<bool> {
+        let response = self
+            .client
+            .head(url.clone())
+            .send()
+            .await
+            .with_context(|| format!("Failed to request artifact from {}", url.clone()))?;
 
         match response.status() {
             status if status.is_success() => Ok(true),
             StatusCode::NOT_FOUND => Ok(false),
-            status => Err(ArtifactError::UnexpectedStatus {
+            status => bail!(format!(
+                "Unexpected status {} on artifact url validation for {}",
                 status,
-                url: url.clone(),
-            }),
+                url.clone()
+            )),
         }
     }
 
-    async fn get_next_bc_version(
-        &self,
-        artifact_request: &ArtifactRequest,
-    ) -> Result<BcVersion, ArtifactError> {
+    async fn get_next_bc_version(&self, artifact_request: &ArtifactRequest) -> Result<BcVersion> {
         let url = self.version_index_url(artifact_request);
 
         // Data is expected to arrive in this format:
         // [{"Version":"15.4.41023.43755","CreationTime":"2020-06-26T00:13:59Z"},
         // {"Version":"16.0.11240.31204","CreationTime":"2021-10-11T08:49:00Z"}]
 
-        let response = self.client.get(url).send().await?.error_for_status()?;
+        let response = self
+            .client
+            .get(url.clone())
+            .send()
+            .await
+            .with_context(|| format!("Failed to request version index from {url}"))?
+            .error_for_status()
+            .context("Get request for version index returned an error status")?;
 
-        let bytes = response.bytes().await?;
+        let bytes = response
+            .bytes()
+            .await
+            .context("Failed to read version index response body")?;
 
-        let entries: Vec<VersionEntry> = serde_json::from_slice(&bytes)?;
+        let entries: Vec<VersionEntry> =
+            serde_json::from_slice(&bytes).context("Failed to deserialize version index")?;
 
         let versions = entries
             .into_iter()
             .map(|entry| entry.version.parse())
-            .collect::<Result<Vec<BcVersion>, BcVersionError>>()?;
+            .collect::<Result<Vec<BcVersion>>>()?;
 
         find_next_higher_version(artifact_request.version, versions)
     }
@@ -211,16 +257,25 @@ impl ArtifactResolver {
         url
     }
 
-    async fn download_artifact(&self, url: &Url, path: &Path) -> Result<(), ArtifactError> {
+    async fn download_artifact(&self, url: &Url, path: &Path) -> Result<()> {
         let mut artifact_zip = path.to_path_buf();
         artifact_zip.add_extension("zip");
 
-        if fs::try_exists(&artifact_zip).await? {
+        if fs::try_exists(&artifact_zip).await.with_context(|| {
+            format!(
+                "Failed to check existence of preexisting artifact zip at {}",
+                &artifact_zip.display()
+            )
+        })? {
             match extract(&artifact_zip, path).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
                     fs::remove_file(&artifact_zip).await?;
-                    return Err(ArtifactError::FileHandling(err));
+                    bail!(format!(
+                        "Failed to extract preexisting artifact zip at {} due to: {}",
+                        &artifact_zip.display(),
+                        err
+                    ));
                 }
             } // TODO an error like disk full should not delete the zip
         }
@@ -228,28 +283,64 @@ impl ArtifactResolver {
         let temp_zip = artifact_zip.with_extension("zip.part");
 
         if let Some(parent) = temp_zip.parent() {
-            fs::create_dir_all(parent).await?;
+            fs::create_dir_all(parent).await.with_context(|| {
+                format!(
+                    "Failed to create parent dir for artifact download temp zip at {}",
+                    &temp_zip.display()
+                )
+            })?;
         }
 
-        let response = self.client.get(url.clone()).send().await?;
+        let response = self
+            .client
+            .get(url.clone())
+            .send()
+            .await
+            .context("Get request for artifact download failed")?;
 
-        if response.status() == StatusCode::NOT_FOUND {
-            return Err(ArtifactError::NotFound(url.clone()));
-        }
-
-        let mut response = response.error_for_status()?;
-        let mut file = fs::File::create(&temp_zip).await?;
+        let mut response = response
+            .error_for_status()
+            .context("Artifact get request returned an error status")?;
+        let mut file = fs::File::create(&temp_zip).await.with_context(|| {
+            format!(
+                "Failed to create temporary zip file for artifact download at {}",
+                &temp_zip.display()
+            )
+        })?;
 
         while let Some(chunk) = response.chunk().await? {
-            file.write_all(&chunk).await?;
+            file.write_all(&chunk).await.with_context(|| {
+                format!(
+                    "Failed to write chunk from artifact download stream to file {}",
+                    &temp_zip.display()
+                )
+            })?;
         }
 
-        file.flush().await?;
-        file.sync_all().await?;
+        file.flush()
+            .await
+            .with_context(|| format!("Failed flush on file {}", &temp_zip.display()))?;
+        file.sync_all()
+            .await
+            .with_context(|| format!("Failed sync_all on file {}", &temp_zip.display()))?;
         drop(file);
 
-        fs::rename(&temp_zip, &artifact_zip).await?;
-        extract(&artifact_zip, path).await?;
+        fs::rename(&temp_zip, &artifact_zip)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to rename artifact zip {} to {}",
+                    &temp_zip.display(),
+                    &artifact_zip.display()
+                )
+            })?;
+        extract(&artifact_zip, path).await.with_context(|| {
+            format!(
+                "Failed to extract artifact zip {} to {}",
+                &artifact_zip.display(),
+                path.display()
+            )
+        })?;
         Ok(())
     }
 }
@@ -263,52 +354,15 @@ struct VersionEntry {
 fn find_next_higher_version(
     searched: BcVersion,
     available: impl IntoIterator<Item = BcVersion>,
-) -> Result<BcVersion, ArtifactError> {
-    available
+) -> Result<BcVersion> {
+    match available
         .into_iter()
         .filter(|version| version.major == searched.major && *version > searched)
         .min()
-        .ok_or(ArtifactError::NoCompatibleVersion(searched))
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ArtifactError {
-    #[error("artifact {0} was not found")]
-    NotFound(Url),
-
-    #[error("no suitable artifact version found for {0}")]
-    NoCompatibleVersion(BcVersion),
-
-    #[error("invalid BC version: {0}")]
-    Version(#[from] BcVersionError),
-
-    #[error("HTTP request failed: {0}")]
-    Http(#[from] reqwest::Error),
-
-    #[error("filesystem operation failed: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("invalid URL: {0}")]
-    Url(#[from] url::ParseError),
-
-    #[error("invalid artifact version index: {0}")]
-    InvalidVersionIndex(#[from] serde_json::Error),
-
-    #[error("background task failed: {0}")]
-    Task(#[from] tokio::task::JoinError),
-
-    #[error("ZIP error: {0}")]
-    Zip(#[from] zip::result::ZipError),
-
-    #[error("unexpected HTTP status {status} for {url}")]
-    UnexpectedStatus { status: StatusCode, url: Url },
-
-    #[error("file handling error: {0}")]
-    FileHandling(#[from] crate::utils::file_handling::FileHandlingError),
-
-    #[error("artifact error: {0}")]
-    Artifact(#[from] Box<dyn std::error::Error>),
-
-    #[error("temp")]
-    Temp(#[from] anyhow::Error),
+    {
+        Some(v) => Ok(v),
+        None => bail!(format!(
+            "Neither version {searched} nor one above it within the same major could be found."
+        )),
+    }
 }
