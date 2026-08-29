@@ -1,5 +1,5 @@
+use anyhow::{bail, Context, Ok, Result};
 use std::fmt;
-use std::num::ParseIntError;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
@@ -11,29 +11,35 @@ pub struct BcVersion {
 }
 
 impl FromStr for BcVersion {
-    type Err = BcVersionError;
+    type Err = anyhow::Error;
 
-    fn from_str(version: &str) -> Result<Self, Self::Err> {
+    fn from_str(version: &str) -> Result<Self> {
+        if version.is_empty() {
+            bail!("Version is empty")
+        }
         let mut parts = version.split('.');
 
-        let major = parts.next().ok_or(BcVersionError::InvalidFormat)?.parse()?;
+        // TODO might be a bit nitpicky but I would like to only need
+        // parse on v and 0 should be an int and not need to be converted.
+        // Also I do not actuall need map_or on major
+        {
+            let major = parts.next().map_or("0", |v| v).parse::<u32>()?;
+            let minor = parts.next().map_or("0", |v| v).parse::<u32>()?;
+            let build = parts.next().map_or("0", |v| v).parse::<u32>()?;
+            let revision = parts.next().map_or("0", |v| v).parse::<u32>()?;
 
-        let minor = parts.next().ok_or(BcVersionError::InvalidFormat)?.parse()?;
+            if parts.next().is_some() {
+                bail!("Version format not valid. More than 4 segments.");
+            }
 
-        let build = parts.next().ok_or(BcVersionError::InvalidFormat)?.parse()?;
-
-        let revision = parts.next().ok_or(BcVersionError::InvalidFormat)?.parse()?;
-
-        if parts.next().is_some() {
-            return Err(BcVersionError::InvalidFormat);
+            Ok(Self {
+                major,
+                minor,
+                build,
+                revision,
+            })
         }
-
-        Ok(Self {
-            major,
-            minor,
-            build,
-            revision,
-        })
+        .with_context(|| format!("Failed to parse version: {}", version))
     }
 }
 
@@ -45,13 +51,4 @@ impl fmt::Display for BcVersion {
             self.major, self.minor, self.build, self.revision
         )
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum BcVersionError {
-    #[error("invalid BC version format; expected major.minor.build.revision")]
-    InvalidFormat,
-
-    #[error("invalid numeric version component: {0}")]
-    InvalidComponent(#[from] ParseIntError),
 }

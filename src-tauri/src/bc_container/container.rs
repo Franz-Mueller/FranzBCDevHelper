@@ -1,4 +1,4 @@
-use crate::bc_container::container_builder::ContainerError;
+use anyhow::{Context, Result};
 
 pub struct BcContainer {
     // TODO Container should inherit Connection to docker but should be aware of changes made to it
@@ -14,12 +14,18 @@ impl BcContainer {
 
     // pub async fn from_inspect() -> Result<Self, ContainerError> {}
 
-    pub async fn start(&self, docker: &bollard::Docker) -> Result<(), ContainerError> {
-        docker.start_container(&self.name, None).await?;
+    pub async fn start(&self, docker: &bollard::Docker) -> Result<()> {
+        docker
+            .start_container(&self.name, None)
+            .await
+            .with_context(|| format!("Failed to start container {}", &self.name))?;
         Ok(())
     }
-    pub async fn stop(&self, docker: &bollard::Docker) -> Result<(), ContainerError> {
-        docker.stop_container(&self.name, None).await?;
+    pub async fn stop(&self, docker: &bollard::Docker) -> Result<()> {
+        docker
+            .stop_container(&self.name, None)
+            .await
+            .with_context(|| format!("Failed to stop container {}", &self.name))?;
         Ok(())
     }
 }

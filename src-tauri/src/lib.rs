@@ -90,6 +90,7 @@ pub struct AppState {
     artifact_resolver: ArtifactResolver,
     image_builder: ImageBuilder,
     container_builder: ContainerBuilder,
+    // TODO save docker bollard client
 }
 
 impl Default for AppState {
