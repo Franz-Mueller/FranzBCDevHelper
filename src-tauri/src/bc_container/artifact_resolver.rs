@@ -1,7 +1,7 @@
 use crate::bc::version::{BcVersion, BcVersionError};
 use crate::bc_container::{BcArtifact, Manifest};
 use crate::utils::file_handling::extract;
-use git2::AttrValue::False;
+use anyhow::{Context, Result};
 use reqwest::{self, StatusCode};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -77,8 +77,7 @@ impl ArtifactResolver {
         }
 
         let platform_path = self.platform_artifact_path(&request, &version);
-        let manifest = Manifest::from_file(&path.join("manifest.json"))
-            .await?;
+        let manifest = Manifest::from_file(&path.join("manifest.json")).await?;
         if !tokio::fs::try_exists(&platform_path).await? {
             self.dowload_platform_artifact(&manifest, &platform_path)
                 .await?;
@@ -309,4 +308,7 @@ pub enum ArtifactError {
 
     #[error("artifact error: {0}")]
     Artifact(#[from] Box<dyn std::error::Error>),
+
+    #[error("temp")]
+    Temp(#[from] anyhow::Error),
 }

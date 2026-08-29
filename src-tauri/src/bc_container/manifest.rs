@@ -1,6 +1,8 @@
+use anyhow::{bail, Context, Result};
+use encoding_rs::UTF_8;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use encoding_rs::UTF_8;
+use tokio::fs;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Manifest {
@@ -20,14 +22,29 @@ pub struct Manifest {
 
 impl Manifest {
     /// decodes file to utf-8 since ms sometimes provides utf-16 le
-    pub async fn from_file<P>(path: P) -> Result<Manifest, Box<dyn std::error::Error>>
+    pub async fn from_file<P>(path: P) -> Result<Manifest>
     where
         P: AsRef<Path>,
     {
-        let file = std::fs::read(path)?;
-        let (cow, _, _) = UTF_8.decode(&file);
+        // TODO async
+        let path = path.as_ref();
 
-        Ok(serde_json::from_str(&cow[..])?)
+        async {
+            let file = fs::read(path)
+                .await
+                .with_context(|| format!("Failed to read manifest.json"))?;
+
+            let (cow, _, had_errors) = UTF_8.decode(&file);
+
+            if had_errors {
+                bail!("Failed to decode manifest.json as UTF-8");
+            }
+
+            Ok(serde_json::from_str(&cow[..])
+                .with_context(|| format!("Failed to deserialized manifest.json"))?)
+        }
+        .await
+        .with_context(|| format!("Manifest file: {}", path.display()))
     }
 
     pub fn version(&self) -> &str {
