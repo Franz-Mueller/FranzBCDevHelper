@@ -1,4 +1,4 @@
-use crate::bc::version::{BcVersion, BcVersionError};
+use crate::bc::version::BcVersion;
 use crate::bc_container::{BcArtifact, BcImage, Manifest};
 use crate::utils::file_handling::{compress, copy_dir_all, FileHandlingError};
 use anyhow::{bail, Context, Result};
@@ -6,7 +6,6 @@ use bollard::{body_full, query_parameters::BuildImageOptionsBuilder, Docker};
 use bytes::Bytes;
 use chrono::Local;
 use futures_util::StreamExt;
-use std::fmt::format;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -32,7 +31,7 @@ impl ImageBuilder {
         Self { docker, build_path }
     }
 
-    pub async fn build(&self, artifact: &BcArtifact) -> Result<BcImage, ImageError> {
+    pub async fn build(&self, artifact: &BcArtifact) -> Result<BcImage> {
         let image_name = format!(
             "bc{}{}{}winltsc2025:latest",
             artifact.deployment_type(),
@@ -51,20 +50,31 @@ impl ImageBuilder {
 
         let build_folder = self.build_path.join(build_folder_name);
 
-        fs::create_dir_all(&build_folder).await?;
+        fs::create_dir_all(&build_folder).await.with_context(|| {
+            format!(
+                "Failed to create dir for build folder at: {}",
+                &build_folder.display()
+            )
+        })?;
 
         let result = async {
-            self.populate_build_folder(&build_folder, artifact).await?;
-            let tar_data = compress(&build_folder).await?;
+            self.populate_build_folder(&build_folder, artifact)
+                .await
+                .context("Failed to populate build folder")?;
+            let tar_data = compress(&build_folder)
+                .await
+                .context("Failed to compress build folder")?;
             self.execute_docker_build(tar_data, &image_name).await
         }
         .await;
 
-        fs::remove_dir_all(&build_folder).await?;
+        fs::remove_dir_all(&build_folder).await.with_context(|| {
+            format!("Failed to remove build folder: {}", &build_folder.display())
+        })?;
 
         match result {
             Ok(image_id) => Ok(BcImage::new(image_id)),
-            Err(e) => Err(e),
+            Err(e) => bail!(format!("Docker image build failed due to: {}", e)),
         }
     }
 
@@ -72,27 +82,32 @@ impl ImageBuilder {
         &self,
         build_folder: &Path,
         artifact: &BcArtifact,
-    ) -> Result<(), ImageError> {
+    ) -> Result<()> {
         let navdvd = build_folder.join("NAVDVD");
-        fs::create_dir(&navdvd).await?;
+        fs::create_dir(&navdvd)
+            .await
+            .with_context(|| format!("Failed to create dir:  {}", &navdvd.display()))?;
 
         tokio::try_join!(
             self.populate_navdvd(&navdvd, artifact),
             self.create_dockerfile(build_folder, artifact)
-        )?;
+        )
+        .with_context(|| {
+            format!(
+                "Failed at least one concurrent task while pupulating the build folder: {}",
+                build_folder.display()
+            )
+        })?;
         Ok(())
     }
 
-    async fn populate_navdvd(
-        &self,
-        navdvd_folder: &Path,
-        artifact: &BcArtifact,
-    ) -> Result<(), ImageError> {
+    async fn populate_navdvd(&self, navdvd_folder: &Path, artifact: &BcArtifact) -> Result<()> {
         tokio::try_join!(
             self.copy_demo_db_into_navdvd(navdvd_folder, artifact.path(), artifact.manifest()),
             self.copy_platform_into_navdvd(navdvd_folder, artifact),
             self.copy_artifact_into_navdvd(navdvd_folder, artifact)
-        )?;
+        )
+        .context("At least one concurrent task failed while populating navdvd")?;
         Ok(())
     }
 
@@ -100,16 +115,31 @@ impl ImageBuilder {
         &self,
         navdvd_folder: &Path,
         artifact: &BcArtifact,
-    ) -> Result<(), ImageError> {
-        Ok(Box::pin(copy_dir_all(artifact.platform_path(), navdvd_folder)).await?)
+    ) -> Result<()> {
+        Ok(
+            Box::pin(copy_dir_all(artifact.platform_path(), navdvd_folder))
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to copy platform files from {} into navdvd at {}",
+                        artifact.platform_path().display(),
+                        navdvd_folder.display()
+                    )
+                })?,
+        )
     }
 
     async fn copy_artifact_into_navdvd(
         &self,
         navdvd_folder: &Path,
         artifact: &BcArtifact,
-    ) -> Result<(), ImageError> {
-        let mut entries = fs::read_dir(artifact.path()).await?;
+    ) -> Result<()> {
+        let mut entries = fs::read_dir(artifact.path()).await.with_context(|| {
+            format!(
+                "Failed to read contents of artifact dir: {}",
+                artifact.path().display()
+            )
+        })?;
         Ok(while let Some(entry) = entries.next_entry().await? {
             let file_name = entry.file_name();
             let file_name_str = file_name.to_string_lossy();
@@ -125,9 +155,25 @@ impl ImageBuilder {
             {
                 let destination = navdvd_folder.join(&file_name);
                 if entry.path().is_dir() {
-                    Box::pin(copy_dir_all(entry.path(), &destination)).await?;
+                    Box::pin(copy_dir_all(entry.path(), &destination))
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "Failed to copy all entries from dir {} to {}",
+                                entry.path().display(),
+                                &destination.display()
+                            )
+                        })?;
                 } else {
-                    fs::copy(entry.path(), &destination).await?;
+                    fs::copy(entry.path(), &destination)
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "Failed to copy file {} to {}",
+                                entry.path().display(),
+                                &destination.display()
+                            )
+                        })?;
                 }
             }
         })
@@ -138,14 +184,17 @@ impl ImageBuilder {
         navdvd_folder: &Path,
         artifact_path: &Path,
         manifest: &Manifest,
-    ) -> Result<(), ImageError> {
+    ) -> Result<()> {
         let db_path = artifact_path.join(manifest.database().replace("\\", "/"));
-        let commondata =
-            if BcVersion::from_str(&manifest.version())? < BcVersion::from_str("27.0.33344.0")? {
-                "CommonAppData"
-            } else {
-                "CommApp"
-            };
+        let commondata = if BcVersion::from_str(&manifest.version())
+            .context("Failed to parse version from manifest")?
+            < BcVersion::from_str("27.0.33344.0")
+                .context("Failed to parse hardcoded version from commapp comparison")?
+        {
+            "CommonAppData"
+        } else {
+            "CommApp"
+        };
 
         let demo_db_dir = navdvd_folder
             .join("SQLDemoDatabase")
@@ -155,11 +204,22 @@ impl ImageBuilder {
             .join("ver")
             .join("Database");
 
-        fs::create_dir_all(&demo_db_dir).await?;
+        fs::create_dir_all(&demo_db_dir).await.with_context(|| {
+            format!(
+                "Failed to create demo db dir in image build folder at {}",
+                &demo_db_dir.display()
+            )
+        })?;
 
         let demo_db_path = demo_db_dir.join("database.bak");
 
-        fs::copy(&db_path, &demo_db_path).await?;
+        fs::copy(&db_path, &demo_db_path).await.with_context(|| {
+            format!(
+                "Failed to copy demo database from {} to {}",
+                db_path.display(),
+                demo_db_path.display()
+            )
+        })?;
         Ok(())
     }
 
@@ -258,31 +318,4 @@ impl ImageBuilder {
 
         image.id.context("Image id missing")
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ImageError {
-    #[error("filesystem operation failed: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("invalid BC version: {0}")]
-    Version(#[from] BcVersionError),
-
-    #[error("invalid artifact manifest: {0}")]
-    Manifest(#[from] serde_json::Error),
-
-    #[error("background task failed: {0}")]
-    Task(#[from] tokio::task::JoinError),
-
-    #[error("building docker image failed: {0}")]
-    ImageBuildFailed(bollard::errors::Error),
-
-    #[error("docker image {0} does not have an image ID")]
-    MissingImageId(String),
-
-    #[error("file andling error: {0}")]
-    FileHandling(#[from] FileHandlingError),
-
-    #[error("anyhow error: {0}")]
-    Anyhow(#[from] anyhow::Error), // temp
 }
