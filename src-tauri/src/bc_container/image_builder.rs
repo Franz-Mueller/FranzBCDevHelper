@@ -1,10 +1,12 @@
 use crate::bc::version::{BcVersion, BcVersionError};
 use crate::bc_container::{BcArtifact, BcImage, Manifest};
 use crate::utils::file_handling::{compress, copy_dir_all, FileHandlingError};
+use anyhow::{bail, Context, Result};
 use bollard::{body_full, query_parameters::BuildImageOptionsBuilder, Docker};
 use bytes::Bytes;
 use chrono::Local;
 use futures_util::StreamExt;
+use std::fmt::format;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -161,24 +163,28 @@ impl ImageBuilder {
         Ok(())
     }
 
-    async fn create_dockerfile(
-        &self,
-        build_folder: &Path,
-        artifact: &BcArtifact,
-    ) -> Result<(), ImageError> {
-        let dockerfile = fs::File::create(build_folder.join("dockerfile")).await?;
+    async fn create_dockerfile(&self, build_folder: &Path, artifact: &BcArtifact) -> Result<()> {
+        let dockerfile_path = build_folder.join("dockerfile");
 
-        let base_image = "mcr.microsoft.com/businesscentral:ltsc2025-dev";
-        let datetime = Local::now().format("%Y%m%d%H%M").to_string();
-        let is_bc_sandbox = if artifact.manifest().is_bc_sandbox() {
-            "Y"
-        } else {
-            "N"
-        };
+        async {
+            let dockerfile = fs::File::create(&dockerfile_path).await?;
 
-        self.populate_dockerfile(dockerfile, artifact, base_image, datetime, is_bc_sandbox)
-            .await?;
-        Ok(())
+            let base_image = "mcr.microsoft.com/businesscentral:ltsc2025-dev";
+            let datetime = Local::now().format("%Y%m%d%H%M").to_string();
+            let is_bc_sandbox = if artifact.manifest().is_bc_sandbox() {
+                "Y"
+            } else {
+                "N"
+            };
+
+            self.populate_dockerfile(dockerfile, artifact, base_image, datetime, is_bc_sandbox)
+                .await
+                .context("Failed to populate dockerfile")?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await
+        .with_context(|| format!("Dockerfile: {}", dockerfile_path.display()))
     }
 
     async fn populate_dockerfile(
@@ -188,7 +194,7 @@ impl ImageBuilder {
         base_image: &str,
         datetime: String,
         is_bc_sandbox: &str,
-    ) -> Result<(), ImageError> {
+    ) -> Result<()> {
         dockerfile
             .write_all(format!("FROM {}\n", base_image).as_bytes())
             .await?;
@@ -226,11 +232,7 @@ impl ImageBuilder {
         Ok(())
     }
 
-    async fn execute_docker_build(
-        &self,
-        tar_data: Vec<u8>,
-        image_name: &str,
-    ) -> Result<String, ImageError> {
+    async fn execute_docker_build(&self, tar_data: Vec<u8>, image_name: &str) -> Result<String> {
         let options = BuildImageOptionsBuilder::default() // TODO add memory parameter when fixed by bollard
             .dockerfile("dockerfile")
             .t(image_name)
@@ -243,10 +245,8 @@ impl ImageBuilder {
 
         while let Some(result) = stream.next().await {
             match result {
-                Ok(info) => {
-                    println!("{info:?}");
-                }
-                Err(err) => return Err(ImageError::ImageBuildFailed(err)),
+                Ok(_) => (),
+                Err(err) => bail!("Error in image build stream: {err}"),
             }
         }
 
@@ -254,11 +254,9 @@ impl ImageBuilder {
             .docker
             .inspect_image(image_name)
             .await
-            .map_err(ImageError::ImageBuildFailed)?;
+            .context("Inspect failed on newly built image")?;
 
-        image
-            .id
-            .ok_or_else(|| ImageError::MissingImageId(image_name.to_string()))
+        image.id.context("Image id missing")
     }
 }
 
@@ -284,4 +282,7 @@ pub enum ImageError {
 
     #[error("file andling error: {0}")]
     FileHandling(#[from] FileHandlingError),
+
+    #[error("anyhow error: {0}")]
+    Anyhow(#[from] anyhow::Error), // temp
 }
