@@ -3,6 +3,7 @@ use crate::bc_container::ArtifactRequest;
 use crate::bc_container::BcContainer;
 use crate::AppState;
 use bollard::Docker;
+use serde::Serialize;
 use tauri::State;
 
 use std::str::FromStr;
@@ -14,19 +15,19 @@ pub async fn delete_docker_container(id: String, name: String) {
     container.delete(&docker).await.unwrap();
 }
 
-struct ContainerFromList {
+#[derive(Serialize)]
+pub struct ContainerFromList {
     name: String,
     id: String,
 }
 
 #[tauri::command]
-pub async fn get_containers() -> Vec<ContainerFromList> {
-    get_containers_inner().await.unwrap()
-}
-
-async fn get_containers_inner() -> Result<Vec<ContainerFromList>, String> {
+pub async fn get_containers() -> Result<Vec<ContainerFromList>, String> {
     let docker = Docker::connect_with_defaults().unwrap();
-    let container_sum = docker.list_containers(None).await.unwrap();
+    let options = bollard::query_parameters::ListContainersOptionsBuilder::default()
+        .all(true)
+        .build();
+    let container_sum = docker.list_containers(Some(options)).await.unwrap();
     let mut containers: Vec<ContainerFromList> = Vec::new();
     for cont in container_sum {
         let name = match cont.names {

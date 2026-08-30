@@ -30,6 +30,6 @@ export interface Container {
     id: string
 }
 
-export async function getContainers(): Promise<[Container]> {
-    return await invoke("get_containers")
+export async function getContainers(): Promise<Container[]> {
+    return invoke<Container[]>("get_containers");
 }
