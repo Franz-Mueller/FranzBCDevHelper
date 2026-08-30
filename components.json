@@ -1,5 +1,4 @@
 {
-	"$schema": "https://shadcn-svelte.com/schema.json",
 	"tailwind": {
 		"css": "src/routes/layout.css",
 		"baseColor": "neutral"
@@ -12,7 +11,6 @@
 		"lib": "$lib"
 	},
 	"typescript": true,
-	"registry": "https://shadcn-svelte.com/registry",
 	"style": "vega",
 	"iconLibrary": "lucide",
 	"menuColor": "default",
