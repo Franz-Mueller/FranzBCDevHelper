@@ -10,5 +10,10 @@ export interface CreateContainerRequest {
 export async function createContainer(
     request: CreateContainerRequest,
 ): Promise<void> {
-    await invoke("create_docker_container", request);
+    await invoke("create_docker_container", {
+        deploymentType: request.deploymentType,
+        version: request.version,
+        country: request.country,
+        containerName: request.containerName,
+    });
 }
