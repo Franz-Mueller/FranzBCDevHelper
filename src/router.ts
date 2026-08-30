@@ -4,6 +4,7 @@ import HomeView from "./views/HomeView.vue";
 import ContainersView from "./views/ContainersView.vue";
 import RepositoriesView from "./views/RepositoriesView.vue";
 import SettingsView from "./views/SettingsView.vue";
+import CreateContainerView from "./views/CreateContainerView.vue";
 
 export default createRouter({
     history: createWebHashHistory(),
@@ -23,6 +24,10 @@ export default createRouter({
         {
             path: "/settings",
             component: SettingsView,
+        },
+        {
+            path: "/createcontainer",
+            component: CreateContainerView,
         },
     ],
 });
