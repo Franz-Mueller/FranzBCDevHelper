@@ -1,9 +1,46 @@
 use crate::bc::version::BcVersion;
 use crate::bc_container::ArtifactRequest;
+use crate::bc_container::BcContainer;
 use crate::AppState;
+use bollard::Docker;
 use tauri::State;
 
 use std::str::FromStr;
+
+#[tauri::command]
+pub async fn delete_docker_container(id: String, name: String) {
+    let docker = Docker::connect_with_defaults().unwrap();
+    let container = BcContainer::new(id, name);
+    container.delete(&docker).await.unwrap();
+}
+
+struct ContainerFromList {
+    name: String,
+    id: String,
+}
+
+#[tauri::command]
+pub async fn get_containers() -> Vec<ContainerFromList> {
+    get_containers_inner().await.unwrap()
+}
+
+async fn get_containers_inner() -> Result<Vec<ContainerFromList>, String> {
+    let docker = Docker::connect_with_defaults().unwrap();
+    let container_sum = docker.list_containers(None).await.unwrap();
+    let mut containers: Vec<ContainerFromList> = Vec::new();
+    for cont in container_sum {
+        let name = match cont.names {
+            Some(n) => n[0].clone(),
+            None => "NA".to_string(),
+        };
+        let id = match cont.id {
+            Some(id) => id,
+            None => "NA".to_string(),
+        };
+        containers.push(ContainerFromList { name, id });
+    }
+    Ok(containers)
+}
 
 #[tauri::command]
 pub async fn create_docker_container(

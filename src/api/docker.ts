@@ -17,3 +17,19 @@ export async function createContainer(
         containerName: request.containerName,
     });
 }
+
+export async function deleteContainer(id: string, name: string): Promise<void> {
+    await invoke("delete_docker_container", {
+        id,
+        name
+    })
+}
+
+export interface Container {
+    name: string
+    id: string
+}
+
+export async function getContainers(): Promise<[Container]> {
+    return await invoke("get_containers")
+}

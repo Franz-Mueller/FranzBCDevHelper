@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use bollard::query_parameters::RemoveContainerOptionsBuilder;
 
 pub struct BcContainer {
     // TODO Container should inherit Connection to docker but should be aware of changes made to it
@@ -26,6 +27,11 @@ impl BcContainer {
             .stop_container(&self.name, None)
             .await
             .with_context(|| format!("Failed to stop container {}", &self.name))?;
+        Ok(())
+    }
+
+    pub async fn delete(&self, docker: &bollard::Docker) -> Result<()> {
+        docker.remove_container(&self.name, None).await?;
         Ok(())
     }
 }
