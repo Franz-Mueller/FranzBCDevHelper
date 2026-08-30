@@ -31,7 +31,7 @@ pub async fn get_containers() -> Result<Vec<ContainerFromList>, String> {
     let mut containers: Vec<ContainerFromList> = Vec::new();
     for cont in container_sum {
         let name = match cont.names {
-            Some(n) => n[0].clone(),
+            Some(n) => n[0].clone().trim_start_matches("/").to_string(),
             None => "NA".to_string(),
         };
         let id = match cont.id {
