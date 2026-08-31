@@ -28,7 +28,6 @@ impl BcContainer {
             .with_context(|| format!("Failed to stop container {}", &self.name))?;
         Ok(())
     }
-
     pub async fn delete(&self, docker: &bollard::Docker) -> Result<()> {
         docker.remove_container(&self.name, None).await?;
         Ok(())

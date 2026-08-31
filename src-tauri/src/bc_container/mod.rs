@@ -18,3 +18,6 @@ use manifest::Manifest;
 
 mod container_builder;
 pub use container_builder::ContainerBuilder;
+
+mod docker_actions;
+pub use docker_actions::DockerActions;

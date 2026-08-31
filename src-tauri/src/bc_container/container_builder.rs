@@ -9,10 +9,8 @@ pub struct ContainerBuilder {
 }
 
 impl ContainerBuilder {
-    pub fn new() -> Self {
-        ContainerBuilder {
-            docker: bollard::Docker::connect_with_defaults().unwrap(),
-        }
+    pub fn new(docker: bollard::Docker) -> Self {
+        ContainerBuilder { docker }
     }
 
     pub async fn build(&self, image: &BcImage, container_name: &str) -> Result<BcContainer> {

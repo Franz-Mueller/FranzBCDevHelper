@@ -1,3 +1,4 @@
+use crate::app_state;
 use crate::bc::version::BcVersion;
 use crate::bc_container::ArtifactRequest;
 use crate::bc_container::BcContainer;
@@ -5,28 +6,42 @@ use crate::AppState;
 use bollard::Docker;
 use serde::Serialize;
 use tauri::State;
+use tokio::sync::Mutex;
 
 use std::str::FromStr;
 
+// TODO Async
+// TODO Error
+// TODO Tests
+
 #[tauri::command]
-pub async fn start_docker_container(id: String, name: String) {
-    let docker = Docker::connect_with_defaults().unwrap();
-    let container = BcContainer::new(id, name);
-    container.start(&docker).await.unwrap();
+pub async fn start_docker_container(
+    state: State<'_, Mutex<AppState>>,
+    name: String,
+) -> Result<(), String> {
+    let state = state.lock().await;
+    state.docker_actions.start(&name).await.unwrap();
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn stop_docker_container(id: String, name: String) {
-    let docker = Docker::connect_with_defaults().unwrap();
-    let container = BcContainer::new(id, name);
-    container.stop(&docker).await.unwrap();
+pub async fn stop_docker_container(
+    state: State<'_, Mutex<AppState>>,
+    name: String,
+) -> Result<(), ()> {
+    let state = state.lock().await;
+    state.docker_actions.stop(&name).await.unwrap();
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn delete_docker_container(id: String, name: String) {
-    let docker = Docker::connect_with_defaults().unwrap();
-    let container = BcContainer::new(id, name);
-    container.delete(&docker).await.unwrap();
+pub async fn delete_docker_container(
+    state: State<'_, Mutex<AppState>>,
+    name: String,
+) -> Result<(), ()> {
+    let state = state.lock().await;
+    state.docker_actions.delete(&name).await.unwrap();
+    Ok(())
 }
 
 #[derive(Serialize)]
