@@ -7,6 +7,8 @@ import { Delete, VideoPlay, VideoPause } from '@element-plus/icons-vue';
 import {
     deleteContainer,
     getContainers,
+    startContainer,
+    stopContainer,
 } from "../api/docker";
 
 import type { Container } from "../api/docker";
@@ -38,7 +40,29 @@ function openCreateContainer() {
 
 async function deleteContainerFromTable(row: Container) {
     try {
-        await deleteContainer(row.id, row.name);
+        await deleteContainer(row.name);
+
+        ElMessage.success("Container deleted");
+
+        await loadContainers();
+    } catch (error) {
+        ElMessage.error(String(error));
+    }
+}
+async function startContainerFromTable(row: Container) {
+    try {
+        await startContainer(row.name);
+
+        ElMessage.success("Container deleted");
+
+        await loadContainers();
+    } catch (error) {
+        ElMessage.error(String(error));
+    }
+}
+async function stopContainerFromTable(row: Container) {
+    try {
+        await stopContainer(row.name);
 
         ElMessage.success("Container deleted");
 
@@ -84,27 +108,24 @@ async function deleteContainerFromTable(row: Container) {
             <el-table-column
                 fixed="right"
                 label="Operations"
-                width="120"
+                width="150"
             >
                 <template #default="scope">
                     <el-button
                         link
                         type="primary"
-                        size="small"
                         :icon="VideoPlay"
-                        @click="deleteContainerFromTable(scope.row)"
+                        @click="startContainerFromTable(scope.row)"
                     />
                     <el-button
                         link
                         type="warning"
-                        size="small"
                         .icon="VideoPause"
-                        @click="deleteContainerFromTable(scope.row)"
+                        @click="stopContainerFromTable(scope.row)"
                     />
                     <el-button
                         link
                         type="danger"
-                        size="small"
                         :icon="Delete"
                         @click="deleteContainerFromTable(scope.row)"
                     />

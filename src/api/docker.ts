@@ -21,29 +21,28 @@ export async function createContainer(
 export interface Container {
     name: string
     id: string
-}
-
-export async function startContainer(id: string, name: string): Promise<void> {
-    await invoke("start_docker_container", {
-        id,
-        name
-    })
-}
-
-export async function stopContainer(id: string, name: string): Promise<void> {
-    await invoke("stop_docker_container", {
-        id,
-        name
-    })
-}
-
-export async function deleteContainer(id: string, name: string): Promise<void> {
-    await invoke("delete_docker_container", {
-        id,
-        name
-    })
+    version: string,
+    status: string,
 }
 
 export async function getContainers(): Promise<Container[]> {
     return invoke<Container[]>("get_containers");
+}
+
+export async function startContainer(name: string): Promise<void> {
+    await invoke("start_docker_container", {
+        name
+    })
+}
+
+export async function stopContainer(name: string): Promise<void> {
+    await invoke("stop_docker_container", {
+        name
+    })
+}
+
+export async function deleteContainer(name: string): Promise<void> {
+    await invoke("delete_docker_container", {
+        name
+    })
 }

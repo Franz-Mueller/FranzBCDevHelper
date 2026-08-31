@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use bollard::query_parameters::RemoveContainerOptionsBuilder;
+use tauri::{State, StateManager};
+
 pub struct BcContainer {
     // TODO Container should inherit Connection to docker but should be aware of changes made to it
     // would save some value passing
