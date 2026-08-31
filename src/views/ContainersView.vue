@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
+import { Delete, VideoPlay, VideoPause } from '@element-plus/icons-vue';
 
 import {
     deleteContainer,
@@ -90,10 +91,23 @@ async function deleteContainerFromTable(row: Container) {
                         link
                         type="primary"
                         size="small"
+                        :icon="VideoPlay"
                         @click="deleteContainerFromTable(scope.row)"
-                    >
-                        Delete
-                    </el-button>
+                    />
+                    <el-button
+                        link
+                        type="warning"
+                        size="small"
+                        .icon="VideoPause"
+                        @click="deleteContainerFromTable(scope.row)"
+                    />
+                    <el-button
+                        link
+                        type="danger"
+                        size="small"
+                        :icon="Delete"
+                        @click="deleteContainerFromTable(scope.row)"
+                    />
                 </template>
             </el-table-column>
         </el-table>

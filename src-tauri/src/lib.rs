@@ -1,6 +1,9 @@
 use self::bc_container::{ArtifactResolver, ContainerBuilder, ImageBuilder};
 
-use self::commands::docker::{create_docker_container, delete_docker_container, get_containers};
+use self::commands::docker::{
+    create_docker_container, delete_docker_container, get_containers, start_docker_container,
+    stop_docker_container,
+};
 
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -129,7 +132,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             create_docker_container,
             delete_docker_container,
-            get_containers
+            get_containers,
+            start_docker_container,
+            stop_docker_container
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

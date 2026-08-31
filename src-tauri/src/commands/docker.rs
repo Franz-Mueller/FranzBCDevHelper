@@ -9,6 +9,20 @@ use tauri::State;
 use std::str::FromStr;
 
 #[tauri::command]
+pub async fn start_docker_container(id: String, name: String) {
+    let docker = Docker::connect_with_defaults().unwrap();
+    let container = BcContainer::new(id, name);
+    container.start(&docker).await.unwrap();
+}
+
+#[tauri::command]
+pub async fn stop_docker_container(id: String, name: String) {
+    let docker = Docker::connect_with_defaults().unwrap();
+    let container = BcContainer::new(id, name);
+    container.stop(&docker).await.unwrap();
+}
+
+#[tauri::command]
 pub async fn delete_docker_container(id: String, name: String) {
     let docker = Docker::connect_with_defaults().unwrap();
     let container = BcContainer::new(id, name);
