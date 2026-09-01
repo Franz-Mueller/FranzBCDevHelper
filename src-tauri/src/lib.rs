@@ -6,6 +6,7 @@ use self::commands::docker::{
 use app_state::AppState;
 
 use std::env;
+use tauri::{Builder, Manager};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod app_state;
@@ -26,7 +27,10 @@ pub fn run() {
         kind: MigrationKind::Up,
     }];
     tauri::Builder::default()
-        .manage(AppState::default())
+        .setup(|app| {
+            app.manage(AppState::default());
+            Ok(())
+        })
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:mydatabase.db", migrations)
