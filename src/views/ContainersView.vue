@@ -138,7 +138,7 @@ async function stopContainerFromTable(row: Container) {
                     <el-button
                         link
                         type="warning"
-                        .icon="VideoPause"
+                        :icon="VideoPause"
                         @click="stopContainerFromTable(scope.row)"
                     />
                     <el-button
