@@ -8,7 +8,7 @@ const loading = ref(false);
 const form = reactive({
   deploymentType: "sandbox",
   version: "",
-  country: "de",
+  country: "",
   containerName: "",
 });
 

@@ -21,8 +21,9 @@ export async function createContainer(
 export interface Container {
     name: string
     id: string
-    version: string,
     status: string,
+    version: string,
+    country: string,
 }
 
 export async function getContainers(): Promise<Container[]> {

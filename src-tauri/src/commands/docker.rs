@@ -48,15 +48,19 @@ pub async fn delete_docker_container(
 pub struct ContainerFromList {
     name: String,
     id: String,
+    status: String,
+    version: String,
+    country: String,
 }
 
 #[tauri::command]
 pub async fn get_containers() -> Result<Vec<ContainerFromList>, String> {
-    let docker = Docker::connect_with_defaults().unwrap();
+    let docker: bollard::Docker = bollard::Docker::connect_with_defaults().unwrap();
     let options = bollard::query_parameters::ListContainersOptionsBuilder::default()
         .all(true)
         .build();
-    let container_sum = docker.list_containers(Some(options)).await.unwrap();
+    let container_sum: Vec<bollard::plugin::ContainerSummary> =
+        docker.list_containers(Some(options)).await.unwrap();
     let mut containers: Vec<ContainerFromList> = Vec::new();
     for cont in container_sum {
         let name = match cont.names {
@@ -67,7 +71,25 @@ pub async fn get_containers() -> Result<Vec<ContainerFromList>, String> {
             Some(id) => id,
             None => "NA".to_string(),
         };
-        containers.push(ContainerFromList { name, id });
+        let status = match cont.status {
+            Some(status) => status,
+            None => "NA".to_string(),
+        };
+        let version: String = match &cont.labels {
+            Some(v) => v.get("version").unwrap().clone(),
+            None => "NA".to_string(),
+        };
+        let country: String = match &cont.labels {
+            Some(v) => v.get("country").unwrap().clone(),
+            None => "NA".to_string(),
+        };
+        containers.push(ContainerFromList {
+            name,
+            id,
+            status,
+            version,
+            country,
+        });
     }
     Ok(containers)
 }

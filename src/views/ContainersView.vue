@@ -106,6 +106,24 @@ async function stopContainerFromTable(row: Container) {
             />
 
             <el-table-column
+                prop="status"
+                label="Status"
+                min-width="300"
+            />
+
+            <el-table-column
+                prop="version"
+                label="Version"
+                min-width="300"
+            />
+
+            <el-table-column
+                prop="country"
+                label="Country"
+                min-width="300"
+            />
+
+            <el-table-column
                 fixed="right"
                 label="Operations"
                 width="150"
