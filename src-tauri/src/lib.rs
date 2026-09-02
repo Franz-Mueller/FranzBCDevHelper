@@ -6,7 +6,7 @@ use self::commands::docker::{
 use app_state::AppState;
 
 use std::env;
-use tauri::{Builder, Manager};
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod app_state;
