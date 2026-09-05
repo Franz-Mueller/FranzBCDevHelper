@@ -10,10 +10,12 @@ use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod app_state;
+mod application;
 mod bc;
 mod bc_container;
 mod commands;
 mod git;
+mod infrastructure;
 mod utils;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/

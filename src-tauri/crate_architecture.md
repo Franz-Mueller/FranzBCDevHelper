@@ -8,19 +8,19 @@
   - domain/
     - mod.rs
     - error.rs
-    - ds1.rs
-    - ds2.rs
-  - application/
-    - mod.rs
-    - error.rs
+    - data_models
+      - mod.rs
+      - ds1.rs
+      - ds2.rs
     - ports/
       - mod.rs
       - port1.rs
       - port2.rs
-    - use_cases/
-      - mod.rs
-      - uc1.rs
-      - uc2.rs
+  - application/
+    - mod.rs
+    - error.rs (not needed. Use cases will be done with anyhow)
+    - uc1.rs
+    - uc2.rs
   - infrastructure/
     - mod.rs
     - error.rs

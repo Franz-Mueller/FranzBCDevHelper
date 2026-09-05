@@ -1,3 +1,4 @@
+use crate::application::entities::EntityError;
 use anyhow::{bail, Context, Ok, Result};
 use std::fmt;
 use std::str::FromStr;
